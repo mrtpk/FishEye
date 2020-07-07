@@ -34,6 +34,9 @@ plan: create a pd with this info
 IS_FLATTEN = True
 
 from pathlib import Path
+import argparse
+import cv2
+
 def write_list(out_path, data):
     with open(out_path, mode='wt', encoding='utf-8') as fp:
         fp.write('\n'.join(data))
@@ -69,6 +72,22 @@ def convert(im_w, im_h, x_min, x_max, y_min, y_max):
     y = y*dh
     h = h*dh
     return [x,y,w,h]
+
+def deconvert(im_w, im_h, x, y, w, h):
+    ox = float(x)
+    oy = float(y)
+    ow = float(w)
+    oh = float(h)
+    x = ox*im_w
+    y = oy*im_h
+    w = ow*im_w
+    h = oh*im_h
+    xmax = (((2*x)+w)/2)
+    xmin = xmax-w
+    ymax = (((2*y)+h)/2)
+    ymin = ymax-h
+    return [int(xmin),int(ymin),int(xmax),int(ymax)]
+
 
 def data2yolo(data):
     if data[-1] is None:
@@ -182,8 +201,18 @@ def create_xml_file(file_path, output_dir):
         voc_labels.append(voc)
     create_file(file_prefix, w, h, voc_labels, output_dir)
 
+def create_train_val(data, test_percent, k_fold_idx):
+    max_kfold = int(1 / test_percent)
+    assert 0 <= k_fold_idx < max_kfold, "k-fold idx should be between 0 and {}".format(max_kfold-1)
+    num_samples = len(data)
+    num_test_samples = int(num_samples * test_percent)
+    start_idx =  k_fold_idx * num_test_samples
+    end_idx = start_idx + num_test_samples
+    test_samples = data[start_idx:end_idx]
+    train_samples = data[0:start_idx] + data[end_idx:]
+    return train_samples, test_samples
 
-def generate_gt(input_path="./train/labels.csv", test_percent = 0.2, img_dir = "./out", output_dir = "./gt_output"):    
+def generate_gt(input_path, test_percent, k_fold_idx, img_dir, output_dir):    
     img_dir = Path(img_dir)
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -194,10 +223,7 @@ def generate_gt(input_path="./train/labels.csv", test_percent = 0.2, img_dir = "
     for data, data_name in zip([full_data, filtered_data], ["full", "filtered"]):
         
         # Each dataset split into train and test
-        num_samples = len(data)
-        num_train = int((1 - test_percent) * num_samples)
-        train_samples = data[:num_train]
-        test_samples = data[num_train:]
+        train_samples, test_samples = create_train_val(data, test_percent, k_fold_idx)
 
         # Generating evaluation labels.csv
         for samples, sample_category in zip([train_samples, test_samples], ["train", "test"]):
@@ -246,10 +272,85 @@ def flattern_dir_struture(input_dir, output_dir):
         dst_path = output_dir.joinpath("{}_{}".format(seq, img_name))
         copyfile(img_path, dst_path)
 
+def get_yolo_label(file_path):
+    im_w = 840
+    im_h = 600
+    try:
+        with open(file_path, 'r') as file:
+            data = file.readlines()
+    except Exception as err:
+        data = []
+    # cvt_bbox = lambda x: "0 {}".format(" ".join(list(map(str, x)))).strip(" ")
+    data = list(map(lambda x: x.split(" ")[1: ], data))
+    # centroid2minmax = deconvert(im_w, im_h, x=float(data[0]), y=float(data[1]), w=float(data[2]), h=float(data[3])
+    data = list(map(lambda x: deconvert(im_w, im_h, x=float(x[0]), y=float(x[1]), w=float(x[2]), h=float(x[3])), data))
+    import pdb; pdb.set_trace()
+    return data # [int(xmin),int(ymin),int(xmax),int(ymax)]
+
+def augmet(img, label):
+    return img, label
+
+import shutil
+def create_coco_style_dataset(train_path, test_path, output_dir):
+    output_dir = Path(output_dir).joinpath("dataset")
+    if output_dir.exists() and output_dir.is_dir():
+        shutil.rmtree(output_dir)
+
+    for file_path, name in zip([train_path, test_path], ["train", "test"]):
+        new_data_paths = []
+        dataset_image_path = output_dir.joinpath("images").joinpath(name)
+        dataset_label_path = output_dir.joinpath("labels").joinpath(name)
+        dataset_label_path.mkdir(parents=True, exist_ok=True)
+        dataset_image_path.mkdir(parents=True, exist_ok=True)
+        with open(file_path) as fp:
+            data = fp.read().splitlines()
+        for img_path in data:
+            img_path = Path(img_path)
+            out_file_img_path = dataset_image_path.joinpath(img_path.name).resolve()
+            new_data_paths.append(str(out_file_img_path))
+            copyfile(img_path, out_file_img_path)
+            copyfile(str(img_path).replace(".jpg", ".txt"), dataset_label_path.joinpath(img_path.name.replace(".jpg", ".txt")))
+
+        with open(output_dir.joinpath("{}.txt".format(name)), mode='wt', encoding='utf-8') as fp:
+            fp.write('\n'.join(new_data_paths))
+"""
+output dir
+    images
+        train
+        valid
+    labels
+        train
+        valid
+"""
 
 if __name__ == "__main__":
-    flattern_dir_struture(input_dir="/home/master/dataset/train", output_dir="./yolo_dataset")
-    generate_gt(input_path="./yolo_dataset/labels.csv",
-                test_percent = 0.2,
-                img_dir = "./yolo_dataset",
-                output_dir = "./yolo_gt")
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--kfold-idx', type=int, help='K fold index')
+    opt = parser.parse_args()
+    
+    test_percent = 0.1
+
+    flattern_dir_struture(input_dir="/home/master/dataset/train", output_dir="/home/visum/tp_workspace/yolo_dataset")
+    generate_gt(input_path="/home/visum/tp_workspace/yolo_dataset/labels.csv",
+                test_percent = test_percent,
+                k_fold_idx = opt.kfold_idx,
+                img_dir = "/home/visum/tp_workspace/yolo_dataset",
+                output_dir = "/home/visum/tp_workspace/yolo_dataset_yolo_gt")
+
+
+    create_coco_style_dataset(train_path="/home/visum/tp_workspace/yolo_dataset_yolo_gt/yolo_full_train_split_0.1.txt",
+                              test_path="/home/visum/tp_workspace/yolo_dataset_yolo_gt/yolo_full_test_split_0.1.txt",
+                              output_dir="/home/visum/tp_workspace/yolo_test/yolov5")
+
+    # flattern_dir_struture(input_dir="/home/tpk/workspace/visum_project/tmp/train", output_dir="/home/tpk/workspace/visum_project/tmp/yolo_dataset")
+    
+    # generate_gt(input_path="/home/tpk/workspace/visum_project/tmp/yolo_dataset/labels.csv",
+    #             test_percent = test_percent,
+    #             k_fold_idx = opt.kfold_idx,
+    #             img_dir = "/home/tpk/workspace/visum_project/tmp/yolo_dataset",
+    #             output_dir = "/home/tpk/workspace/visum_project/tmp/yolo_gt")
+
+    # create_coco_style_dataset(train_path="/home/tpk/workspace/visum_project/tmp/yolo_gt/yolo_filtered_train_split_0.1.txt",
+    #                           test_path="/home/tpk/workspace/visum_project/tmp/yolo_gt/yolo_filtered_test_split_0.1.txt",
+    #                           output_dir="coco")
+    print("Dataset preperation done.")
