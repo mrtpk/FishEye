@@ -309,8 +309,10 @@ def create_coco_style_dataset(train_path, test_path, output_dir):
             out_file_img_path = dataset_image_path.joinpath(img_path.name).resolve()
             new_data_paths.append(str(out_file_img_path))
             copyfile(img_path, out_file_img_path)
-            copyfile(str(img_path).replace(".jpg", ".txt"), dataset_label_path.joinpath(img_path.name.replace(".jpg", ".txt")))
-
+            try:
+                copyfile(str(img_path).replace(".jpg", ".txt"), dataset_label_path.joinpath(img_path.name.replace(".jpg", ".txt")))
+            except Exception as err:
+                pass
         with open(output_dir.joinpath("{}.txt".format(name)), mode='wt', encoding='utf-8') as fp:
             fp.write('\n'.join(new_data_paths))
 """
