@@ -275,20 +275,28 @@ def flattern_dir_struture(input_dir, output_dir):
 def get_yolo_label(file_path):
     im_w = 840
     im_h = 600
-    try:
-        with open(file_path, 'r') as file:
-            data = file.readlines()
-    except Exception as err:
-        data = []
-    # cvt_bbox = lambda x: "0 {}".format(" ".join(list(map(str, x)))).strip(" ")
+    with open(file_path, 'r') as fp:
+        data = fp.readlines()
     data = list(map(lambda x: x.split(" ")[1: ], data))
-    # centroid2minmax = deconvert(im_w, im_h, x=float(data[0]), y=float(data[1]), w=float(data[2]), h=float(data[3])
     data = list(map(lambda x: deconvert(im_w, im_h, x=float(x[0]), y=float(x[1]), w=float(x[2]), h=float(x[3])), data))
-    import pdb; pdb.set_trace()
     return data # [int(xmin),int(ymin),int(xmax),int(ymax)]
 
-def augmet(img, label):
-    return img, label
+def write_aug_label(out_path, labels):
+    im_w = 840
+    im_h = 600
+    bboxes = list(map(lambda x : convert(im_w, im_h, x_min=x[0], x_max=x[2], y_min=x[1], y_max=x[3]), labels))
+    cvt_bbox = lambda x: "0 {}".format(" ".join(list(map(str, x)))).strip(" ")
+    bboxes = list(map(cvt_bbox, bboxes))
+    # import pdb; pdb.set_trace()
+    write_list(out_path, bboxes)
+
+
+def identity(img, labels):
+    return img, labels
+
+def augment(img, labels):
+    img, labels = identity(img, labels)
+    return img, labels
 
 import shutil
 def create_coco_style_dataset(train_path, test_path, output_dir):
@@ -296,7 +304,7 @@ def create_coco_style_dataset(train_path, test_path, output_dir):
     if output_dir.exists() and output_dir.is_dir():
         shutil.rmtree(output_dir)
 
-    for file_path, name in zip([train_path, test_path], ["train", "test"]):
+    for file_path, name in zip([train_path, test_path], ["train", "val"]):
         new_data_paths = []
         dataset_image_path = output_dir.joinpath("images").joinpath(name)
         dataset_label_path = output_dir.joinpath("labels").joinpath(name)
@@ -308,11 +316,26 @@ def create_coco_style_dataset(train_path, test_path, output_dir):
             img_path = Path(img_path)
             out_file_img_path = dataset_image_path.joinpath(img_path.name).resolve()
             new_data_paths.append(str(out_file_img_path))
-            copyfile(img_path, out_file_img_path)
+            # copyfile(img_path, out_file_img_path)
+            # try:
+            #     copyfile(str(img_path).replace(".jpg", ".txt"), dataset_label_path.joinpath(img_path.name.replace(".jpg", ".txt")))
+            # except Exception as err:
+            #     pass
+            is_det_available = True
             try:
-                copyfile(str(img_path).replace(".jpg", ".txt"), dataset_label_path.joinpath(img_path.name.replace(".jpg", ".txt")))
+                cur_labels = get_yolo_label(file_path=str(img_path).replace(".jpg", ".txt"))
             except Exception as err:
-                pass
+                copyfile(img_path, out_file_img_path)
+                is_det_available = False
+            
+            if is_det_available:
+                img_data = cv2.imread(str(img_path))
+                nw_img_data, nw_labels = augment(img=img_data, labels=cur_labels)
+                cv2.imwrite(str(out_file_img_path), nw_img_data)
+                write_aug_label(out_path=dataset_label_path.joinpath(img_path.name.replace(".jpg", ".txt")), labels=nw_labels)
+
+
+
         with open(output_dir.joinpath("{}.txt".format(name)), mode='wt', encoding='utf-8') as fp:
             fp.write('\n'.join(new_data_paths))
 """
@@ -338,20 +361,18 @@ if __name__ == "__main__":
                 k_fold_idx = opt.kfold_idx,
                 img_dir = "/home/visum/tp_workspace/yolo_dataset",
                 output_dir = "/home/visum/tp_workspace/yolo_dataset_yolo_gt")
-
-
     create_coco_style_dataset(train_path="/home/visum/tp_workspace/yolo_dataset_yolo_gt/yolo_full_train_split_0.1.txt",
                               test_path="/home/visum/tp_workspace/yolo_dataset_yolo_gt/yolo_full_test_split_0.1.txt",
                               output_dir="/home/visum/tp_workspace/yolo_test/yolov5")
 
+
+
     # flattern_dir_struture(input_dir="/home/tpk/workspace/visum_project/tmp/train", output_dir="/home/tpk/workspace/visum_project/tmp/yolo_dataset")
-    
     # generate_gt(input_path="/home/tpk/workspace/visum_project/tmp/yolo_dataset/labels.csv",
     #             test_percent = test_percent,
     #             k_fold_idx = opt.kfold_idx,
     #             img_dir = "/home/tpk/workspace/visum_project/tmp/yolo_dataset",
     #             output_dir = "/home/tpk/workspace/visum_project/tmp/yolo_gt")
-
     # create_coco_style_dataset(train_path="/home/tpk/workspace/visum_project/tmp/yolo_gt/yolo_filtered_train_split_0.1.txt",
     #                           test_path="/home/tpk/workspace/visum_project/tmp/yolo_gt/yolo_filtered_test_split_0.1.txt",
     #                           output_dir="coco")
