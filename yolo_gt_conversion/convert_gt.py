@@ -37,6 +37,50 @@ from pathlib import Path
 import argparse
 import cv2
 
+import numpy as np
+import cv2
+from albumentations import (
+    BboxParams,
+    HorizontalFlip,
+    VerticalFlip,
+    Compose,
+    OneOf,
+    IAAAdditiveGaussianNoise,
+    GaussNoise,
+    MotionBlur,
+    MedianBlur,
+    Blur,
+    CLAHE,
+    IAASharpen,
+    IAAEmboss,
+    RandomBrightnessContrast,
+    ChannelShuffle
+)
+
+def get_aug_func(min_area=0., min_visibility=0.):
+    aug = [
+        HorizontalFlip(p=0.3),
+        VerticalFlip(p=0.3),
+        OneOf([
+            IAAAdditiveGaussianNoise(),
+            GaussNoise(),
+        ], p=0.3),
+        OneOf([
+            MotionBlur(p=.2),
+            MedianBlur(blur_limit=3, p=0.1),
+            Blur(blur_limit=3, p=0.1),
+        ], p=0.3),
+        OneOf([
+            ChannelShuffle(),
+            CLAHE(clip_limit=2),
+            IAASharpen(),
+            IAAEmboss(),
+            RandomBrightnessContrast(),            
+        ], p=0.3)
+    ]
+    return Compose(aug, p=0.3, bbox_params=BboxParams(format='pascal_voc', min_area=min_area, 
+                                               min_visibility=min_visibility, label_fields=['category_id']))
+
 def write_list(out_path, data):
     with open(out_path, mode='wt', encoding='utf-8') as fp:
         fp.write('\n'.join(data))
@@ -295,8 +339,21 @@ def identity(img, labels):
     return img, labels
 
 def augment(img, labels):
-    img, labels = identity(img, labels)
-    return img, labels
+    # img, labels = identity(img, labels)
+    # import pdb; pdb.set_trace()
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    annotations = {'image': img, 
+               'bboxes': labels,
+               'category_id': [0]*len(labels)}
+    category_id_to_name = {0: 'fish'}
+    do_augmentation = get_aug_func()
+    augmented_data = do_augmentation(**annotations)
+    img = augmented_data['image']
+    # for bbox in augmented_data['bboxes']:
+    #     x_min, y_min, x_max, y_max = list(map(int, bbox))
+    #     cv2.rectangle(img, (x_min, y_min), (x_max, y_max), color=(255, 0, 0), thickness=2)
+    img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+    return img, augmented_data['bboxes']
 
 import shutil
 def create_coco_style_dataset(train_path, test_path, output_dir):
