@@ -36,6 +36,11 @@
   + Average precision (AP@[0.5:0.95] - averaged over different IoU thresholds
  
 ## Team FishEye
++ Members
+  + Arjun S Kumar
+  + Gabriella M Mansur
+  + Thomas Paul 
+  
 + [Discussion Notes](https://docs.google.com/document/d/1ZsbtSF3w8XVaRTAvtOWZsQTpCUJeGjc9XE1LMQ6Xwks/edit?usp=sharing)
 
 ### Algorithm
