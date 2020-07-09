@@ -43,6 +43,8 @@
   
 + [Discussion Notes](https://docs.google.com/document/d/1ZsbtSF3w8XVaRTAvtOWZsQTpCUJeGjc9XE1LMQ6Xwks/edit?usp=sharing)
 
++ [Presentation Slides](https://docs.google.com/presentation/d/1xTYOzhSLPM0J6NmJVVaoDJxWOCEnXBZidQ4RtLBXyco/edit#slide=id.g8bd97f6c0a_0_41)
+
 ### Algorithm
 + [Ultralytics yolov5](https://github.com/ultralytics/yolov5)
 
